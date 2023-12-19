@@ -158,17 +158,10 @@ Function load() : Object
 	// Returns the found components
 Function getTools() : Collection
 	
-	If (This:C1470.motor.remote)
-		
-		return This:C1470.getComponents(This:C1470.motor.root.folder("Components"))\
-			.combine(This:C1470.getComponents(This:C1470.database.databaseFolder.folder("Components")))
-		
-	Else 
-		
-		return This:C1470.getComponents(This:C1470.motor.root.folder("Components"))\
-			.combine(This:C1470.getComponents(This:C1470.database.databaseFolder.folder("Components")))
-		
-	End if 
+	return This:C1470.getComponents(This:C1470.motor.root.folder("Components"))\
+		.combine(This:C1470.getComponents(This:C1470.database.databaseFolder.folder("Components")))\
+		.combine(This:C1470.getPMComponents())
+	
 	
 	// === === === === === === === === === === === === === === === === === === === === === === === ===
 	// Filtering and resolving aliases
@@ -184,6 +177,101 @@ Function getComponents($folder : 4D:C1709.Folder) : Collection
 	$c.combine($folder.files().query("extension = :1 & original.extension =:1"; ".4DProject"))
 	
 	return $c
+	
+	
+	// === === === === === === === === === === === === === === === === === === === === === === === ===
+	// Return the package manager dependencies folders
+Function getPMComponents() : Collection
+	If (This:C1470.motor.remote/* and FIXME not in situ*/)
+		return This:C1470.motor.root.folder("PackageManager").folder("Components").folders()
+	Else 
+		
+		var $dependenciesFile : 4D:C1709.File
+		$dependenciesFile:=This:C1470.getPMDependencieFile()
+		
+		If (Not:C34($dependenciesFile.exists))
+			return New collection:C1472
+		End if 
+		
+		var $dependencies : 4D:C1709.Object
+		$dependencies:=JSON Parse:C1218($dependenciesFile.getText())
+		If ($dependencies.dependencies=Null:C1517)
+			return New collection:C1472  // just empty, not yet defined
+		End if 
+		
+		var $dependencyCollection : Collection
+		$dependencyCollection:=New collection:C1472
+		
+		var $envFile : 4D:C1709.File
+		$envFile:=This:C1470.getPMEnvFile()
+		
+		var $env : Object
+		If ($envFile.exists)
+			$env:=JSON Parse:C1218($envFile.getText()).dependencies
+		End if 
+		
+		var $defaultFolder : 4D:C1709.Folder
+		$defaultFolder:=Folder:C1567(Folder:C1567(fk database folder:K87:14; *).platformPath; fk platform path:K87:2).parent
+		
+		var $name : Text
+		For each ($name; $dependencies.dependencies)
+			
+			If (($env=Null:C1517) || ($env[$name]=Null:C1517) || (Length:C16(String:C10($env[$name]))=0))
+				
+				$dependencyCollection.push($defaultFolder.folder($name))
+				
+			Else 
+				
+				Case of 
+					: Position:C15("file://"; $env[$name])=1
+						
+						$dependencyCollection.push(DecodeFileURL($env[$name]))
+						
+					: Position:C15("../"; $env[$name])=1
+						
+						If (Not:C34($envFile.parent.parent=Null:C1517))
+							$dependencyCollection.push($envFile.parent.parent.folder(Substring:C12($env[$name]; 4)))
+						End if 
+						
+					: Position:C15("./"; $env[$name])=1
+						
+						$dependencyCollection.push($envFile.parent.folder(Substring:C12($env[$name]; 3)))
+						
+					Else 
+						
+				End case 
+				
+				
+			End if 
+			
+		End for each 
+		
+		return $dependencyCollection
+		
+	End if 
+	
+	// === === === === === === === === === === === === === === === === === === === === === === === ===
+	// Return the package manager dependencies files
+Function getPMDependencieFile() : 4D:C1709.File
+	return Folder:C1567(fk database folder:K87:14; *).file("Project/Sources/dependencies.json")
+	
+	// === === === === === === === === === === === === === === === === === === === === === === === ===
+	// Return the package manager env file
+Function getPMEnvFile()->$envFile : 4D:C1709.File
+	var $envFolder : 4D:C1709.Folder
+	$envFolder:=Folder:C1567(Folder:C1567(fk database folder:K87:14; *).platformPath; fk platform path:K87:2)
+	
+	$envFile:=$envFolder.file("environment4d.json")
+	
+	While (Not:C34($envFile.exists) && Not:C34($envFolder=Null:C1517))
+		$envFolder:=$envFolder.parent
+		If (Not:C34($envFolder=Null:C1517))
+			$envFile:=$envFolder.file("environment4d.json")
+		End if 
+	End while 
+	
+	return $envFile
+	
 	
 	// === === === === === === === === === === === === === === === === === === === === === === === ===
 	// Display the palett
